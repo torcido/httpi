@@ -1,7 +1,12 @@
 require "logger"
+
 require "httpi/version"
 require "httpi/request"
-require "httpi/adapter"
+
+require "httpi/adapter/httpclient"
+require "httpi/adapter/curb"
+require "httpi/adapter/net_http"
+require "httpi/adapter/em_http"
 
 # = HTTPI
 #
@@ -12,12 +17,12 @@ require "httpi/adapter"
 #
 # == GET
 #
-#   request = HTTPI::Request.new :url => "http://example.com"
-#   HTTPI.get request, :httpclient
+#   request = HTTPI::Request.new("http://example.com")
+#   HTTPI.get(request, :httpclient)
 #
 # === Shortcuts
 #
-#   HTTPI.get "http://example.com", :curb
+#   HTTPI.get("http://example.com", :curb)
 #
 # == POST
 #
@@ -25,20 +30,20 @@ require "httpi/adapter"
 #   request.url = "http://example.com"
 #   request.body = "<some>xml</some>"
 #
-#   HTTPI.post request, :httpclient
+#   HTTPI.post(request, :httpclient)
 #
 # === Shortcuts
 #
-#   HTTPI.post "http://example.com", "<some>xml</some>", :curb
+#   HTTPI.post("http://example.com", "<some>xml</some>", :curb)
 #
 # == HEAD
 #
-#   request = HTTPI::Request.new :url => "http://example.com"
-#   HTTPI.head request, :httpclient
+#   request = HTTPI::Request.new("http://example.com")
+#   HTTPI.head(request, :httpclient)
 #
 # === Shortcuts
 #
-#   HTTPI.head "http://example.com", :curb
+#   HTTPI.head("http://example.com", :curb)
 #
 # == PUT
 #
@@ -46,20 +51,20 @@ require "httpi/adapter"
 #   request.url = "http://example.com"
 #   request.body = "<some>xml</some>"
 #
-#   HTTPI.put request, :httpclient
+#   HTTPI.put(request, :httpclient)
 #
 # === Shortcuts
 #
-#   HTTPI.put "http://example.com", "<some>xml</some>", :curb
+#   HTTPI.put("http://example.com", "<some>xml</some>", :curb)
 #
 # == DELETE
 #
-#   request = HTTPI::Request.new :url => "http://example.com"
-#   HTTPI.delete request, :httpclient
+#   request = HTTPI::Request.new("http://example.com")
+#   HTTPI.delete(request, :httpclient)
 #
 # === Shortcuts
 #
-#   HTTPI.delete "http://example.com", :curb
+#   HTTPI.delete("http://example.com", :curb)
 #
 # == More control
 #
@@ -73,64 +78,61 @@ module HTTPI
 
   REQUEST_METHODS = [:get, :post, :head, :put, :delete]
 
-  DEFAULT_LOG_LEVEL = :warn
+  DEFAULT_LOG_LEVEL = :debug
+
+  class Error < StandardError; end
+  class TimeoutError < Error; end
+  class NotSupportedError < Error; end
+  class NotImplementedError < Error; end
+
+  class SSLError < Error
+    def initialize(message = nil, original = $!)
+      super(message)
+      @original = original
+    end
+    attr_reader :original
+  end
 
   class << self
 
     # Executes an HTTP GET request.
     def get(request, adapter = nil)
-      request = Request.new :url => request if request.kind_of? String
-
-      with_adapter :get, request, adapter do |adapter|
-        yield adapter.client if block_given?
-        adapter.get request
-      end
+      request = Request.new(request) if request.kind_of? String
+      request(:get, request, adapter)
     end
 
     # Executes an HTTP POST request.
     def post(*args)
       request, adapter = request_and_adapter_from(args)
-
-      with_adapter :post, request, adapter do |adapter|
-        yield adapter.client if block_given?
-        adapter.post request
-      end
+      request(:post, request, adapter)
     end
 
     # Executes an HTTP HEAD request.
     def head(request, adapter = nil)
-      request = Request.new :url => request if request.kind_of? String
-
-      with_adapter :head, request, adapter do |adapter|
-        yield adapter.client if block_given?
-        adapter.head request
-      end
+      request = Request.new(request) if request.kind_of? String
+      request(:head, request, adapter)
     end
 
     # Executes an HTTP PUT request.
     def put(*args)
       request, adapter = request_and_adapter_from(args)
-
-      with_adapter :put, request, adapter do |adapter|
-        yield adapter.client if block_given?
-        adapter.put request
-      end
+      request(:put, request, adapter)
     end
 
     # Executes an HTTP DELETE request.
     def delete(request, adapter = nil)
-      request = Request.new :url => request if request.kind_of? String
-
-      with_adapter :delete, request, adapter do |adapter|
-        yield adapter.client if block_given?
-        adapter.delete request
-      end
+      request = Request.new(request) if request.kind_of? String
+      request(:delete, request, adapter)
     end
 
     # Executes an HTTP request for the given +method+.
     def request(method, request, adapter = nil)
-      raise ArgumentError, "Invalid request method: #{method}" unless REQUEST_METHODS.include? method
-      send method, request, adapter
+      adapter_class = load_adapter(adapter, request)
+
+      yield adapter_class.client if block_given?
+      log_request(method, request, Adapter.identify(adapter_class.class))
+
+      adapter_class.request(method)
     end
 
     # Shortcut for setting the default adapter to use.
@@ -151,7 +153,7 @@ module HTTPI
 
     # Returns the logger. Defaults to an instance of +Logger+ writing to STDOUT.
     def logger
-      @logger ||= ::Logger.new STDOUT
+      @logger ||= ::Logger.new($stdout)
     end
 
     # Sets the log level.
@@ -174,23 +176,19 @@ module HTTPI
       @log_level = nil
     end
 
-  private
+    private
 
-    # Checks whether +args+ contains of an <tt>HTTPI::Request</tt> or a URL
-    # and a request body plus an optional adapter and returns an Array with
-    # an <tt>HTTPI::Request</tt> and (if given) an adapter.
     def request_and_adapter_from(args)
       return args if args[0].kind_of? Request
       [Request.new(:url => args[0], :body => args[1]), args[2]]
     end
 
-    # Expects a request +method+, a +request+ and an +adapter+ (defaults to
-    # <tt>Adapter.use</tt>) and yields an instance of the adapter to a given block.
-    def with_adapter(method, request, adapter)
-      adapter, adapter_class = Adapter.load adapter
+    def load_adapter(adapter, request)
+      Adapter.load(adapter).new(request)
+    end
 
-      log "HTTPI executes HTTP #{method.to_s.upcase} using the #{adapter} adapter"
-      yield adapter_class.new(request)
+    def log_request(method, request, adapter)
+      log("HTTPI #{method.to_s.upcase} request to #{request.url.host} (#{adapter})")
     end
 
   end

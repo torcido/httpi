@@ -8,21 +8,19 @@ Gem::Specification.new do |s|
   s.version     = HTTPI::VERSION
   s.authors     = ["Daniel Harrington", "Martin Tepper"]
   s.email       = "me@rubiii.com"
-  s.homepage    = "http://github.com/rubiii/#{s.name}"
-  s.summary     = "Interface for Ruby HTTP libraries"
-  s.description = "HTTPI provides a common interface for Ruby HTTP libraries."
+  s.homepage    = "http://github.com/savonrb/#{s.name}"
+  s.summary     = "Common interface for Ruby's HTTP libraries"
+  s.description = "HTTPI provides a common interface for Ruby's HTTP libraries"
 
   s.rubyforge_project = s.name
 
   s.add_dependency "rack"
 
-  s.add_development_dependency "rake",    "~> 0.8.7"
-  s.add_development_dependency "rspec",   "~> 2.7"
-  s.add_development_dependency "mocha",   "~> 0.9.9"
-  s.add_development_dependency "webmock", "~> 1.4.0"
-
-  s.add_development_dependency "autotest"
-  s.add_development_dependency "ZenTest", "4.5.0"
+  s.add_development_dependency "rake",    "~> 0.9"
+  s.add_development_dependency "rspec",   "~> 2.11"
+  s.add_development_dependency "mocha",   "~> 0.12"
+  s.add_development_dependency "webmock", "~> 1.8"
+  s.add_development_dependency "webrick", "~> 1.3"
 
   s.files = `git ls-files`.split("\n")
   s.require_path = "lib"

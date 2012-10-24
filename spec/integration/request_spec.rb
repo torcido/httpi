@@ -78,7 +78,20 @@ describe HTTPI do
   end
 
   HTTPI::Adapter::ADAPTERS.keys.each do |adapter|
-    unless adapter == :curb && RUBY_PLATFORM =~ /java/
+    if adapter == :em_http && RUBY_VERSION >= "1.9.0"
+
+      around(:each) do |example|
+        # Only wrap the example for the :em_http adapter
+        if EM.respond_to?(:synchrony)
+          EM.synchrony do
+            example.run
+            EM.stop
+          end
+        end
+      end
+    end
+
+    unless (adapter == :curb && RUBY_PLATFORM =~ /java/) || (adapter == :em_http && RUBY_VERSION =~ /1\.8/)
       context "using :#{adapter}" do
         let(:adapter) { adapter }
         it_should_behave_like "an HTTP client"
@@ -88,7 +101,7 @@ describe HTTPI do
   end
 
   (HTTPI::Adapter::ADAPTERS.keys - [:net_http]).each do |adapter|
-    unless adapter == :curb && RUBY_PLATFORM =~ /java/
+    unless (adapter == :curb && RUBY_PLATFORM =~ /java/) || adapter == :em_http
       context "using :#{adapter}" do
         let(:adapter) { adapter }
         it_should_behave_like "it works with HTTP digest auth"
