@@ -88,7 +88,6 @@ module HTTPI
         client.cert = ssl.cert
         client.ca_file = ssl.ca_cert_file if ssl.ca_cert_file
         client.verify_mode = ssl.openssl_verify_mode
-        client.ssl_version = :SSLv3
       end
 
       def request_client(type, request)
