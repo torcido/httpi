@@ -90,7 +90,6 @@ module HTTPI
         client.cacert = ssl.ca_cert_file if ssl.ca_cert_file
         client.certtype = ssl.cert_type.to_s.upcase
         client.ssl_verify_peer = ssl.verify_mode == :peer
-        client.ssl_version = 3
       end
 
       def respond_with(client)
