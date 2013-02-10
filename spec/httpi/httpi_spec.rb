@@ -1,10 +1,26 @@
 require "spec_helper"
-require "httpi"
+
+# find out why httpi doesn't load these automatically. [dh, 2012-12-15]
+unless RUBY_VERSION < "1.9"
+  require "em-synchrony"
+  require "em-http-request"
+end
+unless RUBY_PLATFORM =~ /java/
+  require "curb"
+end
 
 describe HTTPI do
   let(:client) { HTTPI }
   let(:httpclient) { HTTPI::Adapter.load(:httpclient) }
   let(:net_http) { HTTPI::Adapter.load(:net_http) }
+
+  before(:all) do
+    HTTPI::Adapter::Rack.mount('example.com', IntegrationServer::Application)
+  end
+
+  after(:all) do
+    HTTPI::Adapter::Rack.unmount('example.com')
+  end
 
   describe ".adapter=" do
     it "sets the default adapter to use" do
@@ -196,14 +212,19 @@ describe HTTPI do
             :httpclient => lambda { HTTPClient },
             :curb       => lambda { Curl::Easy },
             :net_http   => lambda { Net::HTTP },
-            :em_http    => lambda { EventMachine::WebMockHttpConnection } # in real life: EventMachine::HttpRequest
+            :em_http    => lambda { EventMachine::HttpConnection },
+            :rack       => lambda { Rack::MockRequest }
           }
 
           context "using #{adapter}" do
             before { opts[:class].any_instance.expects(:request).with(method) }
 
-            it "yields the HTTP client instance used for the request" do
+            it "#request yields the HTTP client instance" do
               expect { |b| client.request(method, request, adapter, &b) }.to yield_with_args(client_class[adapter].call)
+            end
+
+            it "##{method} yields the HTTP client instance" do
+              expect { |b| client.send(method, request, adapter, &b) }.to yield_with_args(client_class[adapter].call)
             end
           end
         end

@@ -53,7 +53,9 @@ describe HTTPI::Auth::SSL do
     end
 
     it "raises an ArgumentError if the given mode is not supported" do
-      expect { ssl.verify_mode = :invalid }.to raise_error(ArgumentError)
+      expect { ssl.verify_mode = :invalid }.
+        to raise_error(ArgumentError, "Invalid SSL verify mode :invalid\n" +
+                                      "Please specify one of [:none, :peer, :fail_if_no_peer_cert, :client_once]")
     end
   end
 
@@ -157,7 +159,9 @@ describe HTTPI::Auth::SSL do
     end
 
     it 'raises ArgumentError if the version is unsupported' do
-      expect { ssl.ssl_version = :ssl_fail }.to raise_error(ArgumentError)
+      expect { ssl.ssl_version = :ssl_fail }.
+        to raise_error(ArgumentError, "Invalid SSL version :ssl_fail\n" +
+                                      "Please specify one of [:TLSv1, :SSLv2, :SSLv3]")
     end
   end
 

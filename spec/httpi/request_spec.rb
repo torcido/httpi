@@ -43,6 +43,35 @@ describe HTTPI::Request do
     end
   end
 
+  describe "#query" do
+    it "raises an ArgumentError if url not respond to query" do
+      expect { request.query = "q=query" }.to raise_error(ArgumentError)
+    end
+    it "lets you specify query parameter as String" do
+      request.url = "http://example.com"
+      request.query = "q=query"
+      request.url.to_s.should == "http://example.com?q=query"
+    end
+    it "lets you specify query parameter as Hash" do
+      request.url = "http://example.com"
+      request.query = {:q => "query"}
+      request.url.to_s.should == "http://example.com?q=query"
+    end
+    it "getter return nil for invalid url" do
+      request.query.should be_nil
+    end
+    it "getter return String for query parameter as String" do
+      request.url = "http://example.com"
+      request.query = "q=query"
+      request.query.should == "q=query"
+    end
+    it "getter return String for query parameter as Hash" do
+      request.url = "http://example.com"
+      request.query = {:q => "query"}
+      request.query.should == "q=query"
+    end
+  end
+
   describe "#proxy" do
     it "lets you specify the proxy URL to use as a String" do
       request.proxy = "http://proxy.example.com"
@@ -113,9 +142,24 @@ describe HTTPI::Request do
       request.headers["Cookie"].should include("some-cookie=choc-chip", "second-cookie=oatmeal")
     end
 
+    it "accepts an Array of cookies" do
+      cookies = [
+        new_cookie("some-cookie=choc-chip"),
+        new_cookie("second-cookie=oatmeal")
+      ]
+
+      request.set_cookies(cookies)
+
+      request.headers["Cookie"].should include("some-cookie=choc-chip", "second-cookie=oatmeal")
+    end
+
     it "doesn't do anything if the response contains no cookies" do
       request.set_cookies HTTPI::Response.new(200, {}, "")
       request.headers.should_not include("Cookie")
+    end
+
+    def new_cookie(cookie_string)
+      HTTPI::Cookie.new(cookie_string)
     end
 
     def response_with_cookie(cookie)

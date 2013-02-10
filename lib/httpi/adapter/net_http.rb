@@ -2,6 +2,8 @@ require "uri"
 
 require "httpi/adapter/base"
 require "httpi/response"
+require 'net/ntlm'
+require 'kconv'
 
 module HTTPI
   module Adapter
@@ -30,10 +32,21 @@ module HTTPI
 
         do_request(method) do |http, http_request|
           http_request.body = @request.body
-          http.request http_request
+          if @request.on_body then
+            http.request(http_request) do |res|
+              res.read_body do |seg|
+                @request.on_body.call(seg)
+              end
+            end
+          else
+            http.request http_request
+          end
         end
       rescue OpenSSL::SSL::SSLError
         raise SSLError
+      rescue Errno::ECONNREFUSED   # connection refused
+        $!.extend ConnectionError
+        raise
       end
 
       private
@@ -44,13 +57,35 @@ module HTTPI
         proxy.new(@request.url.host, @request.url.port)
       end
 
-      def do_request(type)
+      def do_request(type, &requester)
         setup_client
         setup_ssl_auth if @request.auth.ssl?
 
-        respond_with(@client.start do |http|
-          yield http, request_client(type)
-        end)
+        response = @client.start do |http|
+          negotiate_ntlm_auth(http, &requester) if @request.auth.ntlm?
+          requester.call(http, request_client(type))
+        end
+        respond_with(response)
+      end
+
+      def negotiate_ntlm_auth(http, &requester)
+        # first call request is to authenticate (exchange secret and auth)...
+        ntlm_message_type1 = Net::NTLM::Message::Type1.new
+        @request.headers["Authorization"] = "NTLM #{ntlm_message_type1.encode64}"
+
+        auth_response = respond_with(requester.call(http, request_client(:head)))
+
+        if auth_response.headers["WWW-Authenticate"] =~ /(NTLM|Negotiate) (.+)/
+          auth_token = $2
+          ntlm_message = Net::NTLM::Message.decode64(auth_token)
+          ntlm_response = ntlm_message.response({:user => @request.auth.ntlm[0],
+                                                 :password => @request.auth.ntlm[1]},
+                                                 {:ntlmv2 => true})
+          # Finally add header of Authorization
+          @request.headers["Authorization"] = "NTLM #{ntlm_response.encode64}"
+        end
+
+        nil
       end
 
       def setup_client
@@ -89,8 +124,11 @@ module HTTPI
 
       def respond_with(response)
         headers = response.to_hash
-        headers.each { |key, value| headers[key] = value[0] }
-        Response.new response.code, headers, response.body
+        headers.each do |key, value|
+          headers[key] = value[0] if value.size <= 1
+        end
+        body = (response.body.kind_of?(Net::ReadAdapter) ? "" : response.body)
+        Response.new response.code, headers, body
       end
 
     end

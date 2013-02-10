@@ -31,6 +31,21 @@ module HTTPI
     # Returns the +url+ to access.
     attr_reader :url
 
+    # Sets the +query+ from +url+. Raises an +ArgumentError+ unless the +url+ is valid.
+    def query=(query)
+      raise ArgumentError, "Invalid URL: #{self.url}" unless self.url.respond_to?(:query)
+      if query.kind_of?(Hash)
+        query = Rack::Utils.build_query(query)
+      end
+      query = query.to_s unless query.is_a?(String)
+      self.url.query = query
+    end
+
+    # Returns the +query+ from +url+.
+    def query
+      self.url.query if self.url.respond_to?(:query)
+    end
+
     # Sets the +proxy+ to use. Raises an +ArgumentError+ unless the +proxy+ is valid.
     def proxy=(proxy)
       @proxy = normalize_url! proxy
@@ -63,9 +78,15 @@ module HTTPI
       headers["Accept-Encoding"] = "gzip,deflate"
     end
 
-    # Sets the cookies from a given +http_response+.
-    def set_cookies(http_response)
-      cookie_store.add *http_response.cookies
+    # Sets the cookies from an object responding to `cookies` (e.g. `HTTPI::Response`)
+    # or an Array of `HTTPI::Cookie` objects.
+    def set_cookies(object_or_array)
+      if object_or_array.respond_to?(:cookies)
+        cookie_store.add *object_or_array.cookies
+      else
+        cookie_store.add *object_or_array
+      end
+
       cookies = cookie_store.fetch
       headers["Cookie"] = cookies if cookies
     end
@@ -76,6 +97,15 @@ module HTTPI
     # Sets a body request given a String or a Hash.
     def body=(params)
       @body = params.kind_of?(Hash) ? Rack::Utils.build_query(params) : params
+    end
+
+    # Sets the block to be called while processing the response. The block
+    # accepts a single parameter - the chunked response body.
+    def on_body(&block)
+      if block_given? then
+        @on_body = block
+      end
+      @on_body
     end
 
     # Returns the <tt>HTTPI::Authentication</tt> object.

@@ -23,9 +23,12 @@ module HTTPI
       # @see HTTPI.request
       def request(method)
         setup_client
-        respond_with @client.request(method, @request.url, nil, @request.body, @request.headers)
+        respond_with @client.request(method, @request.url, nil, @request.body, @request.headers, &@request.on_body)
       rescue OpenSSL::SSL::SSLError
         raise SSLError
+      rescue Errno::ECONNREFUSED   # connection refused
+        $!.extend ConnectionError
+        raise
       end
 
       private
@@ -60,7 +63,15 @@ module HTTPI
       end
 
       def respond_with(response)
-        Response.new response.code, Hash[*response.header.all.flatten], response.content
+        headers = {}
+        response.header.all.each do |(header, value)|
+          if headers.key?(header)
+            headers[header] = Array(headers[header]) << value
+          else
+            headers[header] = value
+          end
+        end
+        Response.new response.code, headers, response.content
       end
 
     end
