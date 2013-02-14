@@ -113,6 +113,14 @@ describe HTTPI::Adapter::HTTPClient do
         request.auth.ssl.cert_file = "spec/fixtures/client_cert.pem"
       end
 
+      it "send certificate regardless of state of SSL verify mode" do
+        request.auth.ssl.verify_mode = :none
+        ssl_config.expects(:client_cert=).with(request.auth.ssl.cert)
+        ssl_config.expects(:client_key=).with(request.auth.ssl.cert_key)
+
+        adapter.request(:get)
+      end
+
       it "client_cert, client_key and verify_mode should be set" do
         ssl_config.expects(:client_cert=).with(request.auth.ssl.cert)
         ssl_config.expects(:client_key=).with(request.auth.ssl.cert_key)
@@ -143,13 +151,6 @@ describe HTTPI::Adapter::HTTPClient do
 
       it "verify_mode should be set" do
         ssl_config.expects(:verify_mode=).with(request.auth.ssl.openssl_verify_mode)
-
-        adapter.request(:get)
-      end
-
-      it "does not set client_cert and client_key "do
-        ssl_config.expects(:client_cert=).never
-        ssl_config.expects(:client_key=).never
 
         adapter.request(:get)
       end
